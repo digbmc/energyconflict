@@ -1,0 +1,290 @@
+---
+title: "Energy Conflict Data Cleaning and Tests"
+author: "Alicia Peaker"
+date: "3/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(tidyverse)
+library(lubridate) #to parse dates
+library(tm)
+library(dplyr)
+library(ISOcodes)
+library(tidytext)
+library(scales)
+
+# Load data
+energy_data <- read_csv("~/Documents/projects/energy/energy_clean.csv")
+
+#Set locale
+#Sys.setlocale(locale = "de_DE.UTF-8")
+```
+
+
+```{r, include=FALSE}
+#Clean up dates and newspaper names
+parsed_date <- parse_date_time(energy_data$date_clean, "mdy")
+
+#Sort by filename
+energy_data <- energy_data[order(energy_data$filename),]
+
+# Clean up newspaper names
+energy_data <- energy_data %>% 
+  mutate(newspaper = fct_recode(newspaper, "Süddeutsche Zeitung" = "s|ddeutsche.de", "Süddeutsche Zeitung" = "Sueddeutsche Zeitung", "Süddeutsche Zeitung" = "süddeutsche.de", "Süddeutsche Zeitung" = "Süddeutsche Zeitung (inkl. Regionalausgaben)")) 
+
+```
+
+# Number of articles, per newspaper, over time
+
+```{r, echo=FALSE}
+#Plot data
+
+# Summarize dates by years and months
+date_cleaned <- as.factor(energy_data$date_clean)
+
+energy_data <- energy_data %>%
+  mutate(years = year(date_clean), months = month(date_clean)) %>%
+  group_by(years, months)
+# don't forget to ungroup later!
+
+#Render the plot
+ggplot(energy_data,
+       aes(x = years, fill=newspaper )) +
+  geom_bar(position = "dodge")
+
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+
+#Process the text files as a corpus
+
+# Read text files into a corpus called articles
+articles <- VCorpus(DirSource("../energy_articles/all_clean", encoding = "UTF-8"),
+                    readerControl = list(language = "german"))
+
+#Make all text lowercase
+articles <- tm_map(articles, content_transformer(tolower))
+articles <- tm_map(articles, removePunctuation) 
+articles <- tm_map(articles, removeWords, stopwords("de"))
+articles <- tm_map(articles, stripWhitespace)
+articles <- tm_map(articles, removeNumbers)
+
+
+#had to finagle this list a little bit to get the right words for stemming
+all_terms <- tolower(c("Atomkraftwerk", 
+               "Demonstration", 
+               "Jahrestag", 
+               "Kalkar",
+               "Kernkraftwerk",
+               "Mahnwach",
+              #  "Schneller Brüter",
+              # "Schneller Brueter",
+              "WAA",
+              "Wackersdorf",
+              "Waldspaziergang",
+              "Wiederaufarbeitungsanlag",
+              "Wyhl"))
+
+facilities <- tolower(c(
+                "Atomkraftwerk",
+                "Kernkraftwerk",
+                "Schneller Brüter",
+                "Schneller Brueter",
+                "Wiederaufarbeitungsanlag"))
+
+memorial <- tolower(c("Demonstration",
+                      "Mahnwach",
+                      "Jahrestag",
+                      "Waldspaziergang"))
+
+cities <- tolower(c("Wyhl",
+                    "Wackersdorf",
+                    "Kalkar"))
+
+#There are two spellings of this in the corpus
+bigrams <- tolower(c("Schneller Brüter",
+                "Schneller Brueter"))
+
+
+#Creates a bigram tokenizer that can also handle 1-word ngrams (1:2)
+bigram_tokenizer <- function(x) {
+  unlist(lapply(ngrams(words(x), 1:2), paste, collapse = " "), use.names = FALSE)
+}
+
+#Count the number of times each term above appears in each article in the corpus, includes appearances of word in title
+terms_data_frame <- (DocumentTermMatrix(articles, control = list(dictionary = all_terms, stemming = TRUE)))
+
+#Count the number of time each bigram appears in each article in the corpus, includes appearances of word in title
+terms_data_frame2 <- (DocumentTermMatrix(articles, control = list(tokenizer = bigram_tokenizer, dictionary = bigrams)))
+
+#inspect(terms_data_frame)
+
+#Convert the dataframes into matrices and write to csv files
+terms_data <- as.matrix(terms_data_frame)
+terms_data2 <- as.matrix(terms_data_frame2)
+write.csv(terms_data, "terms_data.csv")
+write.csv(terms_data2, "terms_data2.csv")
+
+#Load in new terms data matrix - necessary because it includes the observation in the first column (filename)
+terms <- read_csv("~/Documents/projects/energy/terms_data.csv")
+terms2 <- read_csv("~/Documents/projects/energy/terms_data2.csv")
+
+#Rename blank column (for filename observations) from original csv file 
+names(terms)[names(terms) == "X1"] <- "filename" 
+names(terms2)[names(terms2) == "X1"] <- "filename" 
+
+#Join terms data with energy data by the filename column
+energy_data <- inner_join(energy_data, terms, by = "filename") %>% 
+  ungroup()
+energy_data <- inner_join(energy_data, terms2, by = "filename")
+
+#Remove whitespace in column names
+names(energy_data)<-str_replace_all(names(energy_data), c(" " = ""))
+
+#Sum the two Schneller Brueter columns as a new column called "sb", and move them to the end (to make selecting column ranges easier in future functions)
+energy_data <- energy_data %>% 
+  mutate(sb = schnellerbrüter + schnellerbrueter) %>% 
+  select(-schnellerbrüter,schnellerbrüter) %>% 
+  select(-schnellerbrueter,schnellerbrueter)
+```
+
+# Bavaria
+
+```{r, echo=FALSE}
+
+
+#As of 3-3-2020, there are 288 articles published in Süddeutsche Zeitung that mention Wackersdorf (322 in total corpus)
+bavaria <- filter(energy_data, wackersdorf > 0, newspaper == "Süddeutsche Zeitung") 
+
+#Summarise if referring to facility or commemorative activity
+bavaria_sum <- bavaria %>% 
+  mutate(facilities = atomkraftwerk + kernkraftwerk + sb + wiederaufarbeitungsanlag + waa) %>% 
+  mutate(memorial = demonstration + mahnwach + jahrestag + waldspaziergang) %>% 
+  select(filename, title, date_clean, months, years, facilities, memorial)
+
+bavaria_gather <- bavaria_sum %>% 
+  pivot_longer(cols = facilities:memorial, names_to = 'type', values_to = 'count') %>% 
+  select(date_clean, title, type, count) %>% 
+  filter(count > 0) %>% 
+  group_by(type, date=floor_date(date_clean, "month")) %>% 
+  summarise(title = paste(title, collapse = " | "), count = sum(count))
+
+#Nearly there - just need to do better with scales...
+# ggplot(bavaria_gather,
+#        aes(x = date, y = count, fill=type, group = 1)) +
+#   geom_bar(stat = "identity") +
+#       scale_x_date(labels = date_format("%m-%Y"))
+
+
+ggplot(bavaria_gather, aes(x = date)) +
+  geom_line(aes(y = count, color = type)) +
+  # xlim(1994,1999) +
+  labs(title = "Wackersdorf, Bavaria",
+       subtitle = "Mentions of nuclear facilities and commemoration in the Süddeutsche Zeitung from 1994-2019",
+       y="Mentions",
+       x="Date") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%b-%Y", expand = c(0,0), limits = as.Date(c("1994-01-01", "2020-01-01"))) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        panel.grid.minor = element_blank())
+
+  ggplot(data = bavaria_gather,
+               aes(x = date, y = count, colour=type)) +
+            geom_line(aes(linetype=type)) +
+            scale_x_date(labels = date_format("%m-%Y")) +
+            geom_point()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+# NOTES?
+
+```{r, include=FALSE}
+
+#Gather spread data
+# terms_gather <- energy_data %>% 
+#   gather(key = term, value = term_count, "atomkraftwerk":"wyhl") %>%
+#   filter(term_count != 0) %>% #excludes terms with 0 hits
+#   select(months, years, newspaper, term, title, term_count) %>% 
+#   group_by(months, years, newspaper, term) %>% 
+#   summarise(total = sum(term_count))
+
+# terms_gather <- energy_data %>% 
+#     pivot_longer(cols = atomkraftwerk:sb, names_to = 'term', values_to = 'count') %>% 
+#     select(months, years, newspaper, title, term, count) %>% 
+#     filter(count != 0) %>% 
+#     group_by(months, years, newspaper, term) %>% 
+#     summarise(title = paste(title, collapse = " | "), count = sum(count))
+
+
+#This line omits "implicit na's" warning caused by factoring newspapers. There are no missing newspaper values. 
+#terms_gather2 <- na.omit(terms_gather)
+
+# lbls <- paste0(month.abb[month(energy_data$clean_date)], " ", lubridate::year(energy_data$clean_date))
+# brks <- energy_data$clean_date
+
+# nrow(terms_gather)
+# nrow(terms)
+```
+
+
+```{r}
+# ggplot(terms_gather, 
+#        aes(x =years, y = count, fill=term, group = 1)) +
+#   geom_bar(stat = "identity") +
+#   facet_grid(newspaper ~ .)
+# 
+# 
+# 
+#   ggplot(data = terms_gather,
+#                aes(x = years, y = count, colour=term)) +
+#             geom_line(aes(linetype=term)) +
+#             geom_point() +
+#             facet_grid(newspaper ~ .)
+#    
+
+```
+
+
+
+
+# Frequency of terms in corpus over time
+
+``` {r echo=FALSE}
+# plot_month <- as.Date(energy_data$months, format = "%m")
+# plot_year <- as.Date(energy_data$years, format = "%Y")
+# 
+# plot_date <- plot_month + plot_year
+
+#Plot word counts for each term within data 
+# ggplot(terms_gather,
+#        aes(x = years, y=total, fill = term)) +
+#   #scale_x_date(name = "Months and Years") +
+#   #scale_x_date(aes(xmin = as.Date("1994-01", "%Y-%m"),
+#                   # xmax = as.Date("2019-12",  "%Y-%m"))) +
+#   geom_bar(stat = "identity")
+  
+  
+```
+
+
+# Time Series Data
+```{r}
+
+
+
+```
+

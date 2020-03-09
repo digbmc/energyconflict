@@ -1,0 +1,80 @@
+[
+  {
+    "op": "core/column-addition",
+    "engineConfig": {
+      "facets": [],
+      "mode": "row-based"
+    },
+    "baseColumnName": "date",
+    "expression": "grel:value",
+    "onError": "set-to-blank",
+    "newColumnName": "date_clean",
+    "columnInsertIndex": 3,
+    "description": "Create column date_clean at index 3 based on column date using expression grel:value"
+  },
+  {
+    "op": "core/text-transform",
+    "engineConfig": {
+      "facets": [],
+      "mode": "row-based"
+    },
+    "columnName": "date_clean",
+    "expression": "grel:value.replace(\"Januar\", \"January\").replace(\"Februar\", \"February\").replace(\"März\", \"March\").replace(\"Maerz\", \"March\").replace(\"Mai\", \"May\").replace(\"Juni\", \"June\").replace(\"Juli\", \"July\").replace(\"Oktober\", \"October\").replace(\"Dezember\", \"December\")",
+    "onError": "keep-original",
+    "repeat": false,
+    "repeatCount": 10,
+    "description": "Text transform on cells in column date_clean using expression grel:value.replace(\"Januar\", \"January\").replace(\"Februar\", \"February\").replace(\"März\", \"March\").replace(\"Maerz\", \"March\").replace(\"Mai\", \"May\").replace(\"Juni\", \"June\").replace(\"Juli\", \"July\").replace(\"Oktober\", \"October\").replace(\"Dezember\", \"December\")"
+  },
+  {
+    "op": "core/text-transform",
+    "engineConfig": {
+      "facets": [],
+      "mode": "row-based"
+    },
+    "columnName": "date_clean",
+    "expression": "value.trim()",
+    "onError": "keep-original",
+    "repeat": false,
+    "repeatCount": 10,
+    "description": "Text transform on cells in column date_clean using expression value.trim()"
+  },
+  {
+    "op": "core/text-transform",
+    "engineConfig": {
+      "facets": [],
+      "mode": "row-based"
+    },
+    "columnName": "date_clean",
+    "expression": "value.toDate()",
+    "onError": "keep-original",
+    "repeat": false,
+    "repeatCount": 10,
+    "description": "Text transform on cells in column date_clean using expression value.toDate()"
+  },
+  {
+    "op": "core/text-transform",
+    "engineConfig": {
+      "facets": [],
+      "mode": "row-based"
+    },
+    "columnName": "date_clean",
+    "expression": "grel:value.toDate().toString('yyyy-MM-dd')",
+    "onError": "keep-original",
+    "repeat": false,
+    "repeatCount": 10,
+    "description": "Text transform on cells in column date_clean using expression grel:value.toDate().toString('yyyy-MM-dd')"
+  },
+  {
+    "op": "core/text-transform",
+    "engineConfig": {
+      "facets": [],
+      "mode": "row-based"
+    },
+    "columnName": "filename",
+    "expression": "join ([cells['date_clean'].value,cells['filename'].value],'-')",
+    "onError": "keep-original",
+    "repeat": false,
+    "repeatCount": 10,
+    "description": "Text transform on cells in column filename using expression join ([cells['date_clean'].value,cells['filename'].value],'-')"
+  }
+]
