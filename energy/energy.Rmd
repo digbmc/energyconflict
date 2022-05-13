@@ -18,7 +18,7 @@ library(tidytext)
 library(scales)
 
 # Load data
-energy_data <- read_csv("~/Documents/projects/energy/energy_clean.csv")
+energy_data <- read_csv("~/projects/energyconflict/energy/energy_clean.csv")
 
 #Set locale
 #Sys.setlocale(locale = "de_DE.UTF-8")

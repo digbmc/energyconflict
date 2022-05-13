@@ -16,4 +16,4 @@ Results of initial topic model to test documents from 2019 data
 
 Metadata created from filenames of /articles-clean
 
-Stopwords taken from: https://github.com/stopwords-iso/stopwords-de
+Stopwords taken from [this repo](https://github.com/stopwords-iso/stopwords-de)
